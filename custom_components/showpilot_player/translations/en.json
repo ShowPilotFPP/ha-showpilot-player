@@ -1,0 +1,198 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Add a ShowPilot Player",
+        "description": "The Player's address, as you open it in a browser (for example `showpilot.local` or `192.168.1.60`). Add `:port` if it doesn't use port 80.",
+        "data": {
+          "host": "Address"
+        },
+        "data_description": {
+          "host": "Name or IP address of the ShowPilot Player"
+        }
+      },
+      "password": {
+        "title": "Admin password",
+        "description": "{host} has an admin password (Settings → Password on the Player). Home Assistant signs in with it.",
+        "data": {
+          "password": "Password"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "ShowPilot Player found",
+        "description": "Add **{name}** ({host}) to Home Assistant?"
+      },
+      "reauth_confirm": {
+        "title": "Sign in to {name} again",
+        "description": "The Player's admin password changed (or was removed). Enter the new one, or leave it empty if there is none now.",
+        "data": {
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Change the Player's address",
+        "data": {
+          "host": "Address"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach a ShowPilot Player at that address.",
+      "invalid_auth": "Wrong admin password.",
+      "not_player": "That address doesn't answer like a ShowPilot Player.",
+      "too_old": "This Player's software is too old for Home Assistant. Update it to 0.11.0 or newer (Settings → Updates on the Player).",
+      "unknown": "Unexpected error; see the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This Player is already set up.",
+      "not_player": "The device found doesn't identify itself as a ShowPilot Player.",
+      "reauth_successful": "Signed in again.",
+      "reconfigure_successful": "Address changed.",
+      "wrong_device": "That address belongs to a different ShowPilot Player."
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "show_starting": "Show starting (schedule opened or Start Main Show fade began)",
+      "show_started": "Show started",
+      "song_started": "Song started",
+      "show_stopping": "Show stopping (after this song or loop)",
+      "show_stopped": "Show stopped",
+      "show_resumed": "Show resumed after the Player restarted"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "show_running": {
+        "name": "Show running"
+      },
+      "show_hours": {
+        "name": "Show hours"
+      },
+      "background_music": {
+        "name": "Background music"
+      },
+      "connected": {
+        "name": "Connected"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "idle": "Idle",
+          "starting": "Starting",
+          "playing": "Playing",
+          "paused": "Paused",
+          "stopping": "Stopping"
+        }
+      },
+      "playlist": {
+        "name": "Playlist"
+      },
+      "song": {
+        "name": "Song"
+      },
+      "next_song": {
+        "name": "Next song"
+      },
+      "next_show": {
+        "name": "Next show"
+      },
+      "show_ends": {
+        "name": "Show ends"
+      },
+      "last_resumed": {
+        "name": "Last resumed"
+      }
+    },
+    "button": {
+      "stop_after_song": {
+        "name": "Stop after this song"
+      },
+      "stop_now": {
+        "name": "Stop now"
+      },
+      "next_song": {
+        "name": "Next song"
+      },
+      "start_main_show": {
+        "name": "Start Main Show"
+      },
+      "restart": {
+        "name": "Restart Player"
+      }
+    }
+  },
+  "selector": {
+    "insert_when": {
+      "options": {
+        "after_song": "After the current song",
+        "now": "Now (the current song resumes afterwards)"
+      }
+    }
+  },
+  "services": {
+    "start_playlist": {
+      "name": "Start playlist",
+      "description": "Start a playlist on the Player (stops what's playing).",
+      "fields": {
+        "playlist": {
+          "name": "Playlist",
+          "description": "Playlist name as on the Player."
+        },
+        "repeat": {
+          "name": "Repeat",
+          "description": "Loop the playlist until stopped."
+        }
+      }
+    },
+    "insert_playlist": {
+      "name": "Insert playlist",
+      "description": "Play a playlist in the middle of the show, then carry on.",
+      "fields": {
+        "playlist": {
+          "name": "Playlist",
+          "description": "Playlist name as on the Player."
+        },
+        "when": {
+          "name": "When",
+          "description": "After the current song, or right away."
+        }
+      }
+    },
+    "run_command": {
+      "name": "Run command",
+      "description": "Run an FPP-style command on the Player (the same commands as its Commands page).",
+      "fields": {
+        "command": {
+          "name": "Command",
+          "description": "Command name, e.g. Start Playlist."
+        },
+        "args": {
+          "name": "Arguments",
+          "description": "List of arguments, in the order the command takes them."
+        }
+      }
+    },
+    "run_preset": {
+      "name": "Run command preset",
+      "description": "Run one of the Player's command presets.",
+      "fields": {
+        "preset": {
+          "name": "Preset",
+          "description": "Preset name as on the Player's Commands page."
+        }
+      }
+    },
+    "start_main_show": {
+      "name": "Start Main Show",
+      "description": "Fade out the pre-show music and lights, then start the main show playlist (Background music settings on the Player)."
+    },
+    "stop_after_song": {
+      "name": "Stop after this song",
+      "description": "Let the current song finish, play the lead-out, then stop."
+    }
+  }
+}

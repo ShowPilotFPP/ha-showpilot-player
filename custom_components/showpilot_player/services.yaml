@@ -1,0 +1,70 @@
+start_playlist:
+  target:
+    entity:
+      integration: showpilot_player
+      domain: media_player
+  fields:
+    playlist:
+      required: true
+      example: "Christmas Show"
+      selector:
+        text:
+    repeat:
+      default: false
+      selector:
+        boolean:
+insert_playlist:
+  target:
+    entity:
+      integration: showpilot_player
+      domain: media_player
+  fields:
+    playlist:
+      required: true
+      example: "Happy Birthday"
+      selector:
+        text:
+    when:
+      default: after_song
+      selector:
+        select:
+          translation_key: insert_when
+          options:
+            - after_song
+            - now
+run_command:
+  target:
+    entity:
+      integration: showpilot_player
+      domain: media_player
+  fields:
+    command:
+      required: true
+      example: "Start Playlist"
+      selector:
+        text:
+    args:
+      example: '["Christmas Show", "true", "false"]'
+      selector:
+        object:
+run_preset:
+  target:
+    entity:
+      integration: showpilot_player
+      domain: media_player
+  fields:
+    preset:
+      required: true
+      example: "Lights on"
+      selector:
+        text:
+start_main_show:
+  target:
+    entity:
+      integration: showpilot_player
+      domain: media_player
+stop_after_song:
+  target:
+    entity:
+      integration: showpilot_player
+      domain: media_player
