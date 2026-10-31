@@ -30,7 +30,11 @@ Copy `custom_components/showpilot_player` into your Home Assistant `config/custo
 
 After the restart the Player should appear as **Discovered** under **Settings → Devices & services**: click **Add**. If it doesn't (for example, Home Assistant is on another network), use **Add integration → ShowPilot Player** and type the Player's address (`192.0.2.20` or `showpilot-player.local`; add `:port` if it isn't on port 80).
 
-If the Player has an admin password, you'll be asked for it. If you change the password later, Home Assistant asks for the new one. If the Player's address changes, discovery updates it by itself; or use **Reconfigure**.
+Next, Home Assistant **pairs** with the Player (ShowPilot Player 0.13.1 or newer). A box appears on the Player's page on any device: "Home Assistant wants to control this Player", with a 4-digit code. Check the code matches the one Home Assistant shows, then press **Allow**. Home Assistant gets an access key of its own, so changing anyone's password or users on the Player never breaks it. You can see or delete the key under **Settings → Users → Access keys** on the Player.
+
+**Reconfigure** (on the integration's entry) pairs again in place: check the address, press Submit and Allow on the Player. Entities, automations and history stay. Use it to move a setup made with a password over to pairing, or when the Player's address changed. If the key is deleted on the Player, Home Assistant asks to pair again by itself.
+
+Older Players can't pair: Home Assistant asks for a user name and password instead (0.13.0), or only the admin password (0.12 and older).
 
 ## What you get
 

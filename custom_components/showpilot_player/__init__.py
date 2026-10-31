@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import PlayerClient
-from .const import CONF_PASSWORD
+from .const import CONF_ACCESS_KEY, CONF_PASSWORD, CONF_USERNAME
 from .coordinator import PlayerConfigEntry, PlayerCoordinator
 
 PLATFORMS = [
@@ -20,7 +20,11 @@ PLATFORMS = [
 
 async def async_setup_entry(hass: HomeAssistant, entry: PlayerConfigEntry) -> bool:
     client = PlayerClient(
-        entry.data[CONF_HOST], async_get_clientsession(hass), entry.data.get(CONF_PASSWORD)
+        entry.data[CONF_HOST],
+        async_get_clientsession(hass),
+        entry.data.get(CONF_PASSWORD),
+        username=entry.data.get(CONF_USERNAME),
+        access_key=entry.data.get(CONF_ACCESS_KEY),
     )
     coordinator = PlayerCoordinator(hass, entry, client)
     await coordinator.async_config_entry_first_refresh()

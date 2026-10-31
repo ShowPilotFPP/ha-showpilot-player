@@ -1,6 +1,6 @@
 # ShowPilot Player — Home Assistant Integration Primer
 
-**Status: v0.1.0.** First release. Covered by tests in Home Assistant's own test harness (fake Player + a real ShowPilot Player 0.11.0 including a power cut); not yet installed on a production Home Assistant.
+**Status: v0.2.0.** Pairing (access keys). v0.1.0 was the first release. Covered by tests in Home Assistant's own test harness (fake Player + a real ShowPilot Player 0.11.0 including a power cut); not yet installed on a production Home Assistant.
 
 ## What it is
 
@@ -26,10 +26,16 @@ custom_components/showpilot_player/
   binary_sensor.py   show_running, show_hours, background_music, connected (always available)
   button.py          stop_after_song, stop_now, next_song, start_main_show, restart
   device_trigger.py  device triggers = EVENT_TYPES on the bus event
-  config_flow.py     user / password / zeroconf (+confirm) / reauth / reconfigure; MIN_PLAYER 0.11.0; unique_id = Player uuid
+  config_flow.py     user / zeroconf (+confirm) / reauth / reconfigure all go through _connect(): pair (progress step) on Player 0.13.1+, else password step (user name optional); MIN_PLAYER 0.11.0; unique_id = Player uuid
   services.yaml, strings.json, translations/en.json, brand/ (icon from the Player's favicon)
 tests/               conftest.py (aiohttp FakePlayer), test_integration.py, test_real_player.py (skipped unless SHOWPILOT_PLAYER_DIR)
 ```
+
+### Signing in (0.2.0)
+- **Pairing** (Player 0.13.1+): `POST /api/player/pair/request {name: "Home Assistant (<location name>)"}` → `{id, code, poll}`; the flow shows a progress step with the code (`async_show_progress` with `progress_task` = `client.wait_for_pairing`, polling `GET /pair/request/<id>` with `X-SPP-Pair-Secret` every `api.PAIR_POLL_SECONDS` (2 s; tests patch it)). Someone presses Allow on the Player → `approved {key}` (handed over once) → `pair_finish` checks `/status` and saves `{host, access_key}` (password and user name dropped). Denied or 10 min expiry → `pair_denied` form (Submit asks again). A 404 on `/pair/request` = older Player → `password` step.
+- The same `_connect()` runs for a new Player (user, zeroconf), **reauth** (no password to type; Submit then Allow) and **Reconfigure** (address prefilled; re-pairs in place, `wrong_device` if the uuid differs). The Player replaces an earlier paired key of the same name, so re-pairing doesn't pile up keys.
+- `PlayerClient(access_key=)` sends `Authorization: Bearer <key>` on HTTP and the event WebSocket; with a key, a 401 isn't retried with a login (`can_sign_in`), it goes straight to reauth. Without a key: session cookie from `/auth/login {username?, password}`, renewed on a 401.
+- A key can run the show; the Player refuses it for users, keys, updates, backups, plugins and settings (none of which the integration uses).
 
 ### Connection
 - Setup: `_async_update_data` opens the feed and takes the first `{type:"state"}` message; auth failure → `ConfigEntryAuthFailed` (reauth), other failures → `UpdateFailed` (HA retries setup).
@@ -62,4 +68,5 @@ ShipPilot tarball, top folder `ha-showpilot-player`, `.release.json` `{repo: "ha
 ## Version history
 | Version | Changes | Tested |
 |---|---|---|
+| 0.2.0 | **Pairing.** Adding the Player, signing in again and Reconfigure all pair: the Player shows "Allow Home Assistant?" with a code, and Home Assistant gets its own access key (ShowPilot Player 0.13.1+). Reconfigure re-pairs an existing setup in place. Older Players: user name + password (0.13.0) or password only. | 16 tests (14 against the fake Player: pairing on add, deny then retry, Reconfigure from a password setup and surviving a password change, wrong device, discovery, reauth by pairing, user name + password and password-only fallbacks; 2 against a real Player 0.13.1: Reconfigure pairs, live feed on the key, deleted key → reauth). |
 | 0.1.0 | First release: discovery, live state, media player, sensors, buttons, device triggers (show starting/started/song/stopping/stopped/resumed), actions (start/insert playlist, presets, commands, Start Main Show), reauth/reconfigure. Requires ShowPilot Player 0.11.0. | 10 tests against a fake Player + the real-Player test (show, power cut, resume event, stop). |

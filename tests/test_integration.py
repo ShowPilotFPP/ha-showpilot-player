@@ -12,7 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
-from custom_components.showpilot_player.const import CONF_PASSWORD, DOMAIN, EVENT_SHOW
+from custom_components.showpilot_player.const import CONF_ACCESS_KEY, CONF_PASSWORD, CONF_USERNAME, DOMAIN, EVENT_SHOW
 
 from .conftest import UUID, FakePlayer, wait_for
 
@@ -50,33 +50,75 @@ async def _setup(hass: HomeAssistant, player: FakePlayer, password: str | None =
 
 
 # ---------------------------------------------------------------- setup
-async def test_config_flow_by_address(hass: HomeAssistant, player: FakePlayer) -> None:
+async def _pair(hass: HomeAssistant, result, player: FakePlayer, allow: bool = True):
+    """The flow waits on the Player; someone presses Allow (or Deny) there."""
+    assert result["type"] == "progress", result
+    assert result["step_id"] == "pair"
+    assert result["description_placeholders"]["code"] == "4827"
+    await wait_for(lambda: any(r["state"] == "pending" for r in player.pair_requests.values()))
+    player.decide(allow)
+    await hass.async_block_till_done()
+    return await hass.config_entries.flow.async_configure(result["flow_id"])
+
+
+async def test_config_flow_by_address_pairs(hass: HomeAssistant, player: FakePlayer) -> None:
+    player.password = "someone-elses"  # sign-in is on: only the key gets in
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     assert result["type"] == "form"
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: player.host})
-    assert result["type"] == "create_entry"
+    assert next(iter(player.pair_requests.values()))["name"].startswith("Home Assistant")
+    result = await _pair(hass, result, player)
+    assert result["type"] == "create_entry", result
     assert result["title"] == "front-yard"
     assert result["result"].unique_id == UUID
-    assert result["data"] == {CONF_HOST: player.host}
-    await hass.async_block_till_done()
-
-
-async def test_config_flow_with_password(hass: HomeAssistant, player: FakePlayer) -> None:
-    player.password = "show-secret"
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: player.host})
-    assert result["step_id"] == "password"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_PASSWORD: "nope"})
-    assert result["errors"] == {"base": "invalid_auth"}
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_PASSWORD: "show-secret"})
-    assert result["type"] == "create_entry"
-    assert result["data"][CONF_PASSWORD] == "show-secret"
+    assert result["data"][CONF_HOST] == player.host
+    assert result["data"][CONF_ACCESS_KEY] in player.keys
+    assert CONF_PASSWORD not in result["data"]
     await hass.async_block_till_done()
     assert hass.states.get(MP).state == MediaPlayerState.IDLE
 
 
+async def test_pairing_denied_then_asked_again(hass: HomeAssistant, player: FakePlayer) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: player.host})
+    result = await _pair(hass, result, player, allow=False)
+    assert result["type"] == "form" and result["step_id"] == "pair_denied"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    result = await _pair(hass, result, player)
+    assert result["type"] == "create_entry"
+    await hass.async_block_till_done()
+
+
+async def test_older_player_signs_in_with_user_name_and_password(hass: HomeAssistant, player: FakePlayer) -> None:
+    player.pairing = False  # 0.13.0
+    player.password = "show-secret"
+    player.username = "will"
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: player.host})
+    assert result["step_id"] == "password"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_USERNAME: "bob", CONF_PASSWORD: "show-secret"})
+    assert result["errors"] == {"base": "invalid_auth"}
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_USERNAME: "will", CONF_PASSWORD: "show-secret"})
+    assert result["type"] == "create_entry"
+    assert result["data"] == {CONF_HOST: player.host, CONF_USERNAME: "will", CONF_PASSWORD: "show-secret"}
+    await hass.async_block_till_done()
+    assert hass.states.get(MP).state == MediaPlayerState.IDLE
+
+
+async def test_older_player_password_only(hass: HomeAssistant, player: FakePlayer) -> None:
+    player.pairing = False  # 0.12 and older
+    player.password = "show-secret"
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: player.host})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_PASSWORD: "show-secret"})
+    assert result["type"] == "create_entry"
+    assert result["data"] == {CONF_HOST: player.host, CONF_PASSWORD: "show-secret"}
+    await hass.async_block_till_done()
+
+
 async def test_config_flow_errors(hass: HomeAssistant, player: FakePlayer) -> None:
     player.state["version"] = "0.10.3"
+    player.pairing = False
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: player.host})
     assert result["errors"] == {"base": "too_old"}
@@ -84,17 +126,51 @@ async def test_config_flow_errors(hass: HomeAssistant, player: FakePlayer) -> No
     assert result["errors"] == {"base": "cannot_connect"}
 
 
+async def test_reconfigure_pairs_in_place(hass: HomeAssistant, player: FakePlayer) -> None:
+    """Reconfigure on a setup made with a password: same entry and entities, now with a key."""
+    player.password = "show-secret"
+    entry = await _setup(hass, player, "show-secret")
+    entity_entry_before = hass.states.get(MP)
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["step_id"] == "reconfigure"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: player.host})
+    result = await _pair(hass, result, player)
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_HOST] == player.host
+    assert entry.data[CONF_ACCESS_KEY] in player.keys
+    assert CONF_PASSWORD not in entry.data, "the password is no longer kept"
+    await hass.async_block_till_done()
+    # The password changes on the Player: Home Assistant doesn't care any more.
+    player.password = "changed"
+    player.sessions.clear()
+    await player.drop_clients()
+    await hass.services.async_call("button", "press", {"entity_id": "button.front_yard_next_song"}, blocking=True)
+    assert player.calls[-1] == ("next", {})
+    await wait_for(lambda: hass.states.get(MP).state == MediaPlayerState.IDLE)
+    assert entity_entry_before is not None and len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+
+async def test_reconfigure_refuses_another_player(hass: HomeAssistant, player: FakePlayer) -> None:
+    entry = await _setup(hass, player)
+    player.state["uuid"] = "SP-SOMEONE-ELSE"
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: player.host})
+    result = await _pair(hass, result, player)
+    assert result["reason"] == "wrong_device"
+
+
 async def test_discovered_on_the_network(hass: HomeAssistant, player: FakePlayer) -> None:
     info = ZeroconfServiceInfo(
         ip_address=ip_address("127.0.0.1"), ip_addresses=[ip_address("127.0.0.1")], port=player.port,
         hostname="front-yard.local.", type="_showpilot-player._tcp.local.",
         name="ShowPilot Player on front-yard._showpilot-player._tcp.local.",
-        properties={"uuid": UUID, "version": "0.11.0", "path": "/api/player"},
+        properties={"uuid": UUID, "version": "0.13.1", "path": "/api/player"},
     )
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF}, data=info)
     assert result["step_id"] == "zeroconf_confirm"
     assert result["description_placeholders"]["name"] == "front-yard"
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    result = await _pair(hass, result, player)
     assert result["type"] == "create_entry"
     await hass.async_block_till_done()
     # Found again at a new address: the entry follows it, no second device.
@@ -103,6 +179,7 @@ async def test_discovered_on_the_network(hass: HomeAssistant, player: FakePlayer
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_ZEROCONF}, data=moved)
     assert result["reason"] == "already_configured"
     assert entry.data[CONF_HOST] == player.host
+    assert entry.data[CONF_ACCESS_KEY] in player.keys
 
 
 # ---------------------------------------------------------------- live state
@@ -213,7 +290,7 @@ async def test_controls_reach_the_player(hass: HomeAssistant, player: FakePlayer
         await hass.services.async_call(DOMAIN, "start_playlist", {"entity_id": MP, "playlist": "Nope"}, blocking=True)
 
 
-async def test_password_session_renewed_and_changed(hass: HomeAssistant, player: FakePlayer) -> None:
+async def test_password_session_renewed_then_paired_on_reauth(hass: HomeAssistant, player: FakePlayer) -> None:
     player.password = "show-secret"
     entry = await _setup(hass, player, "show-secret")
     # The Player restarted and forgot its sessions: commands log in again.
@@ -226,8 +303,11 @@ async def test_password_session_renewed_and_changed(hass: HomeAssistant, player:
     await player.drop_clients()
     await wait_for(lambda: any(f["context"]["source"] == "reauth" for f in hass.config_entries.flow.async_progress()), timeout=5)
     flow = next(f for f in hass.config_entries.flow.async_progress() if f["context"]["source"] == "reauth")
-    result = await hass.config_entries.flow.async_configure(flow["flow_id"], {CONF_PASSWORD: "new-secret"})
+    # Signing in again = pairing: Home Assistant gets its own key, no password to type.
+    result = await hass.config_entries.flow.async_configure(flow["flow_id"], {})
+    result = await _pair(hass, result, player)
     assert result["reason"] == "reauth_successful"
-    assert entry.data[CONF_PASSWORD] == "new-secret"
+    assert entry.data[CONF_ACCESS_KEY] in player.keys
+    assert CONF_PASSWORD not in entry.data
     await hass.async_block_till_done()
     await wait_for(lambda: hass.states.get(MP).state == MediaPlayerState.IDLE)

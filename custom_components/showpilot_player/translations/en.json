@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Add a ShowPilot Player",
-        "description": "The Player's address, as you open it in a browser (for example `showpilot.local` or `192.168.1.60`). Add `:port` if it doesn't use port 80.",
+        "description": "The Player's address, as you open it in a browser (for example `showpilot.local` or `192.168.1.60`). Add `:port` if it doesn't use port 80. Next, you allow Home Assistant on the Player.",
         "data": {
           "host": "Address"
         },
@@ -13,43 +13,53 @@
         }
       },
       "password": {
-        "title": "Admin password",
-        "description": "{host} has an admin password (Settings → Password on the Player). Home Assistant signs in with it.",
+        "title": "Sign in to the Player",
+        "description": "{host} runs an older ShowPilot Player that can't pair. Enter a user name and password from Settings → Users on the Player (leave the user name empty if it only has an admin password). Update the Player to 0.13.1 or newer to pair instead.",
         "data": {
+          "username": "User name",
           "password": "Password"
         }
       },
       "zeroconf_confirm": {
         "title": "ShowPilot Player found",
-        "description": "Add **{name}** ({host}) to Home Assistant?"
+        "description": "Add **{name}** ({host}) to Home Assistant? Next, you allow Home Assistant on the Player."
       },
       "reauth_confirm": {
-        "title": "Sign in to {name} again",
-        "description": "The Player's admin password changed (or was removed). Enter the new one, or leave it empty if there is none now.",
-        "data": {
-          "password": "Password"
-        }
+        "title": "Pair {name} again",
+        "description": "The Player no longer accepts Home Assistant (its access key was deleted, or a password changed). Press Submit, then press **Allow** on the Player's page."
       },
       "reconfigure": {
-        "title": "Change the Player's address",
+        "title": "Reconfigure {name}",
+        "description": "Check the address, then press Submit and **Allow** on the Player's page. Home Assistant gets a new access key of its own; your entities and automations stay as they are.",
         "data": {
           "host": "Address"
         }
+      },
+      "pair_denied": {
+        "title": "Not allowed",
+        "description": "The Player said no, or nobody pressed Allow within 10 minutes. Press Submit to ask {host} again."
       }
     },
     "error": {
       "cannot_connect": "Could not reach a ShowPilot Player at that address.",
-      "invalid_auth": "Wrong admin password.",
+      "invalid_auth": "Wrong user name or password.",
       "not_player": "That address doesn't answer like a ShowPilot Player.",
       "too_old": "This Player's software is too old for Home Assistant. Update it to 0.11.0 or newer (Settings → Updates on the Player).",
-      "unknown": "Unexpected error; see the Home Assistant log."
+      "unknown": "Unexpected error; see the Home Assistant log.",
+      "pair_refused": "The Player refused to pair. Pairing works only on the same network as the Player, not through Public access."
     },
     "abort": {
       "already_configured": "This Player is already set up.",
       "not_player": "The device found doesn't identify itself as a ShowPilot Player.",
-      "reauth_successful": "Signed in again.",
-      "reconfigure_successful": "Address changed.",
-      "wrong_device": "That address belongs to a different ShowPilot Player."
+      "reauth_successful": "Paired again.",
+      "reconfigure_successful": "Done. Home Assistant has a new access key.",
+      "wrong_device": "That address belongs to a different ShowPilot Player.",
+      "too_old": "This Player's software is too old for Home Assistant. Update it to 0.11.0 or newer (Settings → Updates on the Player).",
+      "cannot_connect": "The Player stopped answering.",
+      "unknown": "Unexpected error; see the Home Assistant log."
+    },
+    "progress": {
+      "pair": "Open the Player's page ({host}) on any device. A box says that Home Assistant wants to control it: check it shows the code **{code}**, then press **Allow**.\n\nThis waits for up to 10 minutes."
     }
   },
   "device_automation": {

@@ -38,6 +38,10 @@ class FakePlayer:
     def __init__(self) -> None:
         self.state = _state()
         self.password: str | None = None
+        self.username: str | None = None  # Player 0.13.0+: login needs it when set
+        self.pairing = True  # Player 0.13.1+
+        self.keys: set[str] = set()
+        self.pair_requests: dict[str, dict] = {}
         self.sessions: set[str] = set()
         self.calls: list[tuple[str, dict]] = []
         self.clients: set[web.WebSocketResponse] = set()
@@ -47,7 +51,19 @@ class FakePlayer:
 
     # ---------------------------------------------------------- helpers
     def authorized(self, request: web.Request) -> bool:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer ") and auth[7:] in self.keys:
+            return True
         return not self.password or request.cookies.get("spp_session") in self.sessions
+
+    def decide(self, allow: bool = True) -> str | None:
+        """Someone presses Allow (or Deny) on the Player for the waiting request."""
+        req = next(r for r in self.pair_requests.values() if r["state"] == "pending")
+        req["state"] = "approved" if allow else "denied"
+        if allow:
+            req["key"] = "spk_" + secrets.token_urlsafe(32)
+            self.keys.add(req["key"])
+        return req.get("key")
 
     async def send(self, msg: dict) -> None:
         for ws in list(self.clients):
@@ -71,6 +87,8 @@ class FakePlayer:
         r = app.router
         r.add_get("/api/player/auth", self.h_auth)
         r.add_post("/api/player/auth/login", self.h_login)
+        r.add_post("/api/player/pair/request", self.h_pair_request)
+        r.add_get("/api/player/pair/request/{id}", self.h_pair_poll)
         r.add_get("/api/player/status", self.h_status)
         r.add_get("/api/player/events", self.h_events)
         for p in ("play", "insert", "stop", "next", "prev", "pause", "command", "presets/run", "music/main-show", "system/restart"):
@@ -97,8 +115,33 @@ class FakePlayer:
     async def h_auth(self, request):
         return web.json_response({"required": bool(self.password), "loggedIn": self.authorized(request)})
 
+    async def h_pair_request(self, request):
+        if not self.pairing:
+            return web.json_response({"error": "not found"}, status=404)
+        body = await request.json()
+        rid = secrets.token_hex(4)
+        req = {"id": rid, "code": "4827", "poll": secrets.token_urlsafe(16), "name": body.get("name"), "state": "pending"}
+        self.pair_requests[rid] = req
+        return web.json_response({"id": rid, "code": req["code"], "poll": req["poll"], "expiresInSec": 600})
+
+    async def h_pair_poll(self, request):
+        req = self.pair_requests.get(request.match_info["id"])
+        if not req:
+            return web.json_response({"state": "expired"})
+        if request.headers.get("X-SPP-Pair-Secret") != req["poll"]:
+            return web.json_response({"error": "wrong pairing secret"}, status=403)
+        if req["state"] == "approved":
+            del self.pair_requests[req["id"]]
+            return web.json_response({"state": "approved", "key": req["key"], "name": req["name"]})
+        if req["state"] == "denied":
+            del self.pair_requests[req["id"]]
+            return web.json_response({"state": "denied"})
+        return web.json_response({"state": "pending", "code": req["code"]})
+
     async def h_login(self, request):
         body = await request.json()
+        if self.username and (body.get("username") or "").lower() != self.username:
+            return web.json_response({"error": "wrong user name or password"}, status=401)
         if self.password and body.get("password") != self.password:
             return web.json_response({"error": "wrong password"}, status=401)
         token = secrets.token_hex(8)
@@ -145,7 +188,9 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 
 @pytest.fixture(autouse=True)
 def fast_reconnect():
-    with patch("custom_components.showpilot_player.coordinator.RECONNECT_DELAYS", [0.05]):
+    with patch("custom_components.showpilot_player.coordinator.RECONNECT_DELAYS", [0.05]), patch(
+        "custom_components.showpilot_player.api.PAIR_POLL_SECONDS", 0.05
+    ):
         yield
 
 
