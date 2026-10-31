@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 DOMAIN = "showpilot_player"
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 CONF_PASSWORD = "password"
+CONF_USERNAME = "username"
+# Got by pairing (Player 0.13.1+); replaces the user name and password.
+CONF_ACCESS_KEY = "access_key"
 
 # Fired on the event bus for every show event the Player sends:
 #   event_type: showpilot_player_event

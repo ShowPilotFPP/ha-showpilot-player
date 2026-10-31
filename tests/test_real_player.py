@@ -116,3 +116,56 @@ async def test_real_player_show_power_cut_and_resume(hass: HomeAssistant, real: 
     await wait_for(lambda: hass.states.get(mp).state == MediaPlayerState.IDLE, timeout=10)
     assert events[-1].data["type"] == "show_stopped"
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_real_player_pairing_on_reconfigure(hass: HomeAssistant, real: RealPlayer) -> None:
+    """Player 0.13.1+: sign-in on, Reconfigure pairs, the key carries the live feed, deleting it asks again."""
+    import aiohttp
+
+    from homeassistant import config_entries
+
+    from custom_components.showpilot_player.const import CONF_ACCESS_KEY, CONF_PASSWORD
+
+    base = f"http://127.0.0.1:{real.port}/api/player"
+    async with aiohttp.ClientSession() as web:
+        r = await web.post(f"{base}/users", json={"username": "will", "password": "lights-on"})
+        assert r.status == 200
+        cookie = {"Cookie": r.headers["Set-Cookie"].split(";")[0]}
+
+        # An existing setup from before pairing, with the old password-only sign-in.
+        entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: f"127.0.0.1:{real.port}", CONF_PASSWORD: "wrong"}, unique_id="x")
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        await wait_for(lambda: any(f["context"]["source"] == "reauth" for f in hass.config_entries.flow.async_progress()), timeout=10)
+        status = await (await web.get(f"{base}/status", headers=cookie)).json()
+        hass.config_entries.async_update_entry(entry, unique_id=status["uuid"])
+
+        result = await entry.start_reconfigure_flow(hass)
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: f"127.0.0.1:{real.port}"})
+        assert result["type"] == "progress"
+        code = result["description_placeholders"]["code"]
+        reqs = (await (await web.get(f"{base}/pair", headers=cookie)).json())["requests"]
+        assert [q["code"] for q in reqs] == [code]
+        assert reqs[0]["name"].startswith("Home Assistant")
+        assert (await web.post(f"{base}/pair/{reqs[0]['id']}/allow", headers=cookie)).status == 200
+        await hass.async_block_till_done()
+        await asyncio.sleep(0.5)
+        result = await hass.config_entries.flow.async_configure(result["flow_id"])
+        assert result["reason"] == "reconfigure_successful", result
+        assert entry.data[CONF_ACCESS_KEY].startswith("spk_")
+        assert CONF_PASSWORD not in entry.data
+        await hass.async_block_till_done()
+        mp = next(s.entity_id for s in hass.states.async_all("media_player"))
+        await wait_for(lambda: hass.states.get(mp).state == MediaPlayerState.IDLE, timeout=10)
+        # Live feed with the key: a show started on the Player shows up.
+        await web.post(f"{base}/play", headers=cookie, json={"playlist": "Night"})
+        await wait_for(lambda: hass.states.get(mp).state == MediaPlayerState.PLAYING, timeout=10)
+        await web.post(f"{base}/stop", headers=cookie, json={})
+
+        # Deleting the key on the Player: Home Assistant asks to pair again.
+        keys = (await (await web.get(f"{base}/access-keys", headers=cookie)).json())["keys"]
+        await web.delete(f"{base}/access-keys/{keys[0]['id']}", headers=cookie)
+        await hass.config_entries.async_reload(entry.entry_id)
+        await wait_for(lambda: any(f["context"]["source"] == "reauth" for f in hass.config_entries.flow.async_progress()), timeout=10)
+        assert await hass.config_entries.async_unload(entry.entry_id)
